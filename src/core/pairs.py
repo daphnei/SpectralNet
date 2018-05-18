@@ -80,6 +80,8 @@ def get_choices(arr, num_choices, valid_range=[-1, np.inf], not_arr=None, replac
             n_arr -= 1
     return choices
 
+# def create_pairs_from_word_data(x, 
+
 def create_pairs_from_labeled_data(x, digit_indices, use_classes=None):
     '''
     Positive and negative pair creation from labeled data.
@@ -111,6 +113,7 @@ def create_pairs_from_labeled_data(x, digit_indices, use_classes=None):
             labels += [1, 0]
     pairs = np.array(pairs).reshape((len(pairs), 2) + x.shape[1:])
     labels = np.array(labels)
+    import pdb; pdb.set_trace()
     return pairs, labels
 
 def create_pairs_from_unlabeled_data(x1, x2=None, y=None, p=None, k=5, tot_pairs=None, precomputed_knn_path='', use_approx=False, pre_shuffled=False, verbose=None):
@@ -281,5 +284,6 @@ def create_pairs_from_unlabeled_data(x1, x2=None, y=None, p=None, k=5, tot_pairs
             print(metrics.confusion_matrix(true, labels))
         ret.append(true)
 
+    import pdb; pdb.set_trace()
     return ret
 

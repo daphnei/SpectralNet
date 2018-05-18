@@ -18,7 +18,7 @@ import tensorflow as tf
 from core import costs as cf
 from munkres import Munkres
 
-def train_gen(pairs_train, dist_train, batch_size):
+def train_gen(pairs_train, dist_train, extra_distances_train, batch_size):
     '''
     Generator used for training the siamese net with keras
 
@@ -33,8 +33,9 @@ def train_gen(pairs_train, dist_train, batch_size):
         for batch_start, batch_end in batches:
             p_ = random_idx[batch_start:batch_end]
             x1, x2 = pairs_train[p_, 0], pairs_train[p_, 1]
+            extra_distances = extra_distances_train[p_]
             y = dist_train[p_]
-            yield([x1, x2], y)
+            yield([x1, x2, extra_distances], y)
 
 def make_layer_list(arch, network_type=None, reg=None, dropout=0):
     '''

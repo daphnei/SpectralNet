@@ -8,7 +8,8 @@ import tensorflow as tf
 
 from keras import backend as K
 from keras.models import Model
-from keras.layers import Input, Lambda, Subtract
+from keras.layers import Dense, Input, Lambda, Subtract
+import keras
 
 from . import train
 from . import costs
@@ -16,7 +17,7 @@ from .layer import stack_layers
 from .util import LearningHandler, make_layer_list, train_gen, get_scale
 
 class SiameseNet:
-    def __init__(self, inputs, arch, siam_reg, y_true):
+    def __init__(self, inputs, extra_distances, arch, siam_reg, y_true, checkpoint=None):
         self.orig_inputs = inputs
         # set up inputs
         self.inputs = {
@@ -37,13 +38,22 @@ class SiameseNet:
         # add the distance layer
         self.distance = Lambda(costs.euclidean_distance, output_shape=costs.eucl_dist_output_shape)([self.outputs['A'], self.outputs['B']])
 
+        # add another fully-connected layer that merges the predicted distance with the other distances
+        if extra_distances != None:
+            all_distances = keras.layers.concatenate([extra_distances, self.distance], axis=1)
+            self.distance = Dense(1, activation='linear')(all_distances)
+
         #create the distance model for training
-        self.net = Model([self.inputs['A'], self.inputs['B']], self.distance)
+        self.net = Model([self.inputs['A'], self.inputs['B'], extra_distances], self.distance)
+
+        if checkpoint is not None:
+            self.net.load_weights(checkpoint)
 
         # compile the siamese network
         self.net.compile(loss=costs.get_contrastive_loss(m_neg=1, m_pos=0.05), optimizer='rmsprop')
 
-    def train(self, pairs_train, dist_train, pairs_val, dist_val,
+    def train(self, pairs_train, dist_train, extra_distances_train,
+            pairs_val, dist_val, extra_distances_val,
             lr, drop, patience, num_epochs, batch_size):
         # create handler for early stopping and learning rate scheduling
         self.lh = LearningHandler(
@@ -53,10 +63,13 @@ class SiameseNet:
                 patience=patience)
 
         # initialize the training generator
-        train_gen_ = train_gen(pairs_train, dist_train, batch_size)
+        train_gen_ = train_gen(pairs_train,
+                               dist_train,
+                               extra_distances_train,
+                               batch_size)
 
         # format the validation data for keras
-        validation_data = ([pairs_val[:, 0], pairs_val[:, 1]], dist_val)
+        validation_data = ([pairs_val[:, 0], pairs_val[:, 1], extra_distances_val], dist_val) 
 
         # compute the steps per epoch
         steps_per_epoch = int(len(pairs_train) / batch_size)
