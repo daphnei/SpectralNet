@@ -26,14 +26,15 @@ def get_image_features_for_word(word_to_path_dict, word):
 
 
 def get_feature_paths_dict():
-  FEATURE_PATHS = '/home/daphnei/nlpgrid/word_absolute_paths.tsv'
+  # FEATURE_PATHS = '/home/daphnei/nlpgrid/word_absolute_paths.tsv'
+  FEATURE_PATHS = '/nlp/data/bcal/features/word_absolute_paths.tsv'
   output = {}
-  replace = ('/nlp/data/bcal/features/', '/home/daphnei/nlpgrid/')
+  # replace = ('/nlp/data/bcal/features/', '/home/daphnei/nlpgrid/')
   # with open(FEATURE_PATHS, 'r') as f:
   with codecs.open(FEATURE_PATHS, encoding="utf-8") as f:
     for line in f:
       word, path = line.strip().split('\t')
-      path = path.replace(replace[0], replace[1])
+      # path = path.replace(replace[0], replace[1])
       output[word] = path
   return output
 
@@ -76,7 +77,7 @@ def get_synset_cached(pos):
     synset_cache[pos] = l
     return l
 
-def sufficiently_different_random_word(target):
+def sufficiently_different_random_word(target, config):
   synsets = get_synset_cached(target.pos())
 
   similar = [target]
@@ -85,10 +86,18 @@ def sufficiently_different_random_word(target):
 
   current = target
 
-  while current in similar:
+  while current in similar or current.lemma_names()[0] not in config['word_to_feature_paths_dict']:
     current = random.choice(synsets)
 
   return current.lemma_names()[0]
+  # while word_is_bad:
+    # if current not in similar:
+      # word_is_bad = False
+# 
+    # if current not in config['word_to_feature_paths_dict']:
+      # word_is_bad = True
+# 
+    # if word_is_bad:
 
 if __name__ == '__main__':
   train_pairs = {}
@@ -111,10 +120,13 @@ if __name__ == '__main__':
     word = synset.lemma_names()[0]
 
     possible_simwords = synset.lemma_names()[1:]
-    possible_simwords = sorted(possible_simwords, key=lambda x: editdistance.eval(x, word))
-    simword = synset.lemma_names()[-1]
+    possible_simwords = sorted(possible_simwords, key=lambda x: editdistance.eval(x, word), reverse=True)
+    possible_simwords = list(word for word in possible_simwords if word in config['word_to_feature_paths_dict'])
+    if len(possible_simwords) == 0:
+      continue
+    simword = possible_simwords[0]
 
-    randomword = sufficiently_different_random_word(synset)
+    randomword = sufficiently_different_random_word(synset, config)
  
     if random.random() <= 0.95:
       add_pair(train_pairs, word, simword, True, config)
