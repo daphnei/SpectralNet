@@ -1,6 +1,7 @@
 from nltk import wordnet
 import random
 import editdistance
+import itertools
 import codecs
 import glob
 import os
@@ -10,6 +11,8 @@ from scipy.spatial.distance import cdist
 
 wn = wordnet.wordnet
 
+random.seed(1234)
+np.random.seed(1234)
 
 def get_image_features_for_word(word_to_path_dict, word):
   list_of_features = []
@@ -26,7 +29,7 @@ def get_image_features_for_word(word_to_path_dict, word):
 
 
 def get_feature_paths_dict():
-  FEATURE_PATHS = '/home/daphnei/nlpgrid/word_absolute_paths.tsv'
+  FEATURE_PATHS = '/home/daphnei/nlpgrid2/word_absolute_paths.tsv'
   output = {}
   replace = ('/nlp/data/bcal/features/', '/home/daphnei/nlpgrid/')
   # with open(FEATURE_PATHS, 'r') as f:
@@ -49,7 +52,6 @@ def get_alternative_distances(word1, word2, word_to_features):
     return averaged_similarity
   else:
     return None
-
 
 def add_pair(pairs, word1, word2, sim, config):
   if word1 in config['avoid_these'] or word2 in config['avoid_these']:
@@ -108,28 +110,25 @@ if __name__ == '__main__':
 
     hyponyms = synset.hyponyms()
 
-    word = synset.lemma_names()[0]
-
-    possible_simwords = synset.lemma_names()[1:]
-    possible_simwords = sorted(possible_simwords, key=lambda x: editdistance.eval(x, word))
-    simword = synset.lemma_names()[-1]
-
-    randomword = sufficiently_different_random_word(synset)
+    all_pairs = list(itertools.combinations(synset.lemma_names(), 2))
+    for word, simword in all_pairs:
+        if editdistance.eval(word, simword) > 2:
+            randomword = sufficiently_different_random_word(synset)
  
-    if random.random() <= 0.95:
-      add_pair(train_pairs, word, simword, True, config)
-      add_pair(train_pairs, word, randomword, False, config)
-    else:
-      add_pair(test_pairs, word, simword, True, config)
-      add_pair(test_pairs, word, randomword, False, config)
+            if random.random() <= 0.95:
+              add_pair(train_pairs, word, simword, True, config)
+              add_pair(train_pairs, word, randomword, False, config)
+            else:
+              add_pair(test_pairs, word, simword, True, config)
+              add_pair(test_pairs, word, randomword, False, config)
   
   import pdb; pdb.set_trace()
-  with open('train_word_pairs.tsv', 'w') as f:
+  with open('tmp.train_word_pairs.tsv', 'w') as f:
     for pair in train_pairs.keys():
       f.write('\t'.join(str(x) for x in pair) + '\t')
       f.write('\t'.join(str(x) for x in train_pairs[pair]) + '\n')
 
-  with open('test_word_pairs.tsv', 'w') as f:
+  with open('tmp.test_word_pairs.tsv', 'w') as f:
     for pair in test_pairs.keys():
       f.write('\t'.join(str(x) for x in pair) + '\t')
       f.write('\t'.join(str(x) for x in test_pairs[pair]) + '\n')
