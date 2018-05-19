@@ -1,6 +1,7 @@
 from nltk import wordnet
 import random
 import editdistance
+import itertools
 import codecs
 import glob
 import os
@@ -10,6 +11,8 @@ from scipy.spatial.distance import cdist
 
 wn = wordnet.wordnet
 
+random.seed(1234)
+np.random.seed(1234)
 
 def get_image_features_for_word(word_to_path_dict, word):
   list_of_features = []
@@ -51,7 +54,6 @@ def get_alternative_distances(word1, word2, word_to_features):
   else:
     return None
 
-
 def add_pair(pairs, word1, word2, sim, config):
   if word1 in config['avoid_these'] or word2 in config['avoid_these']:
     return
@@ -90,14 +92,6 @@ def sufficiently_different_random_word(target, config):
     current = random.choice(synsets)
 
   return current.lemma_names()[0]
-  # while word_is_bad:
-    # if current not in similar:
-      # word_is_bad = False
-# 
-    # if current not in config['word_to_feature_paths_dict']:
-      # word_is_bad = True
-# 
-    # if word_is_bad:
 
 if __name__ == '__main__':
   train_pairs = {}
@@ -117,23 +111,17 @@ if __name__ == '__main__':
 
     hyponyms = synset.hyponyms()
 
-    word = synset.lemma_names()[0]
+    all_pairs = list(itertools.combinations(synset.lemma_names(), 2))
+    for word, simword in all_pairs:
+        if editdistance.eval(word, simword) > 2:
+            randomword = sufficiently_different_random_word(synset)
 
-    possible_simwords = synset.lemma_names()[1:]
-    possible_simwords = sorted(possible_simwords, key=lambda x: editdistance.eval(x, word), reverse=True)
-    possible_simwords = list(word for word in possible_simwords if word in config['word_to_feature_paths_dict'])
-    if len(possible_simwords) == 0:
-      continue
-    simword = possible_simwords[0]
-
-    randomword = sufficiently_different_random_word(synset, config)
- 
-    if random.random() <= 0.95:
-      add_pair(train_pairs, word, simword, True, config)
-      add_pair(train_pairs, word, randomword, False, config)
-    else:
-      add_pair(test_pairs, word, simword, True, config)
-      add_pair(test_pairs, word, randomword, False, config)
+            if random.random() <= 0.95:
+              add_pair(train_pairs, word, simword, True, config)
+              add_pair(train_pairs, word, randomword, False, config)
+            else:
+              add_pair(test_pairs, word, simword, True, config)
+              add_pair(test_pairs, word, randomword, False, config)
   
   import pdb; pdb.set_trace()
   with open('train_word_pairs.tsv', 'w') as f:
