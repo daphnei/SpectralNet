@@ -14,18 +14,20 @@ wn = wordnet.wordnet
 random.seed(1234)
 np.random.seed(1234)
 
-def get_image_features_for_word(word_to_path_dict, word):
-  list_of_features = []
-  word = word.replace('_', ' ')
-  if word in word_to_path_dict:
-    for f_name in glob.glob(os.path.join(word_to_path_dict[word], '*.pkl')):
-      with open(f_name, 'rb') as fp:
-        vect = pickle.load(fp, encoding='latin1')
-        if not np.any(np.isnan(vect)):
-          list_of_features.append(vect)
-    return np.array(list_of_features)
-  else:
-    return None
+def get_image_features_for_word(word_to_path_dict, word, cache):
+  if word not in cache:
+    list_of_features = []
+    word = word.replace('_', ' ')
+    if word in word_to_path_dict:
+      for f_name in glob.glob(os.path.join(word_to_path_dict[word], '*.pkl')):
+        with open(f_name, 'rb') as fp:
+          vect = pickle.load(fp, encoding='latin1')
+          if not np.any(np.isnan(vect)):
+            list_of_features.append(vect)
+      cache[word] = np.array(list_of_features)
+    else:
+      cache[word] = None
+  return cache[word]
 
 
 def get_feature_paths_dict():
@@ -41,9 +43,9 @@ def get_feature_paths_dict():
       output[word] = path
   return output
 
-def get_alternative_distances(word1, word2, word_to_features):
-  features_1 = get_image_features_for_word(word_to_features, word1)
-  features_2 = get_image_features_for_word(word_to_features, word2)
+def get_alternative_distances(word1, word2, word_to_features, cache):
+  features_1 = get_image_features_for_word(word_to_features, word1, cache)
+  features_2 = get_image_features_for_word(word_to_features, word2, cache)
 
   if features_1 is not None and len(features_1) > 0 and features_2 is not None and len(features_2) > 0:
     similarities = 1 - cdist(features_1, features_2, metric='cosine') 
@@ -59,12 +61,15 @@ def add_pair(pairs, word1, word2, sim, config):
     return
 
   dist = get_alternative_distances(
-      word1, word2, config['word_to_feature_paths_dict'])
+      word1, word2, config['word_to_feature_paths_dict'], config['cache'])
   if dist is None:
     return
 
-  tup = (word1, word2, sim)
-  alt_tups = [(word1, word2, True), (word1, word2, False), (word2, word1, True), (word2, word1, False)]
+  tup = (word1, word2, int(sim))
+  alt_tups = [(word1, word2, int(True)),
+              (word1, word2, int(False)),
+              (word2, word1, int(True)),
+              (word2, word1, int(False))]
 
   if all(t not in pairs.keys() for t in alt_tups):
     pairs[tup] = [dist]
@@ -104,8 +109,13 @@ if __name__ == '__main__':
     config['avoid_these'] = list(x.strip().split('.')[0] for x in f.readlines())
 
   config['word_to_feature_paths_dict'] = get_feature_paths_dict()
+  config['cache'] = {}
 
-  for synset in wn.all_synsets():
+  for index, synset in enumerate(wn.all_synsets()):
+    if index % 100 == 0:
+      print('*** Iteration = ' + str(index))
+      print('*** Train Count = ' + str(len(train_pairs)))
+      print('*** Test Count = ' + str(len(test_pairs)))
     if len(synset.lemmas()) < 2:
       continue
 
@@ -113,8 +123,8 @@ if __name__ == '__main__':
 
     all_pairs = list(itertools.combinations(synset.lemma_names(), 2))
     for word, simword in all_pairs:
-        if editdistance.eval(word, simword) > 2:
-            randomword = sufficiently_different_random_word(synset)
+        if editdistance.eval(word, simword) > 2 and word not in config['avoid_these'] and simword not in config['avoid_these']:
+            randomword = sufficiently_different_random_word(synset, config)
 
             if random.random() <= 0.95:
               add_pair(train_pairs, word, simword, True, config)
@@ -122,6 +132,9 @@ if __name__ == '__main__':
             else:
               add_pair(test_pairs, word, simword, True, config)
               add_pair(test_pairs, word, randomword, False, config)
+    if len(config['cache']) > 1000:
+      print('***CLEARNING CACHE***')
+      config['cache'] = {}
   
   import pdb; pdb.set_trace()
   with open('train_word_pairs.tsv', 'w') as f:
