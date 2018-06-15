@@ -17,7 +17,7 @@ from .layer import stack_layers
 from .util import LearningHandler, make_layer_list, train_gen, get_scale
 
 class SiameseNet:
-    def __init__(self, inputs, extra_distances, arch, siam_reg, y_true, checkpoint=None):
+    def __init__(self, inputs, extra_distances, y_true, params):
         self.orig_inputs = inputs
         # set up inputs
         self.inputs = {
@@ -27,27 +27,36 @@ class SiameseNet:
                 }
 
         self.y_true = y_true
+        self.extra_distances = extra_distances
 
         # generate layers
         self.layers = []
-        self.layers += make_layer_list(arch, 'siamese', siam_reg)
+        self.layers += make_layer_list(params['arch'], 'siamese', params['siam_reg'])
 
         # create the siamese net
         self.outputs = stack_layers(self.inputs, self.layers)
 
         # add the distance layer
-        self.distance = Lambda(costs.euclidean_distance, output_shape=costs.eucl_dist_output_shape)([self.outputs['A'], self.outputs['B']])
+        self.siamese_distance = Lambda(costs.euclidean_distance, output_shape=costs.eucl_dist_output_shape)([self.outputs['A'], self.outputs['B']])
 
         # add another fully-connected layer that merges the predicted distance with the other distances
-        if extra_distances != None:
-            all_distances = keras.layers.concatenate([extra_distances, self.distance], axis=1)
+        import pdb; pdb.set_trace()
+        if params['use_extra_distances']:
+            print('Using extra distances')
+            # all_distances = keras.layers.concatenate([extra_distances, self.siamese_distance], axis=1)
+            all_distances = keras.layers.concatenate([self.siamese_distance, self.siamese_distance], axis=1)
+            # fc = Dense(4, activation='relu')(all_distances)
             self.distance = Dense(1, activation='linear')(all_distances)
+            # self.distance = keras.layers.average([extra_distances, self.siamese_distance])
+        else:
+            self.distance = self.siamese_distance
+            print('NOT using extra distances.')
 
         #create the distance model for training
         self.net = Model([self.inputs['A'], self.inputs['B'], extra_distances], self.distance)
 
-        if checkpoint is not None:
-            self.net.load_weights(checkpoint)
+        if params['model_in'] is not None:
+            self.net.load_weights(params['model_in'])
 
         # compile the siamese network
         self.net.compile(loss=costs.get_contrastive_loss(m_neg=1, m_pos=0.05), optimizer='rmsprop')
@@ -81,6 +90,7 @@ class SiameseNet:
 
     def predict(self, x, batch_sizes):
         # compute the siamese embeddings of the input data
+        # print(train.predict(self.siamese_distance, x_unlabeled=x, inputs=self.orig_inputs, y_true=self.y_true, batch_sizes=batch_sizes))
         return train.predict(self.outputs['A'], x_unlabeled=x, inputs=self.orig_inputs, y_true=self.y_true, batch_sizes=batch_sizes)
 
 class SpectralNet:
