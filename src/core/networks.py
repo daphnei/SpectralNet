@@ -37,18 +37,29 @@ class SiameseNet:
         self.outputs = stack_layers(self.inputs, self.layers)
 
         # add the distance layer
-        self.siamese_distance = Lambda(costs.euclidean_distance, output_shape=costs.eucl_dist_output_shape)([self.outputs['A'], self.outputs['B']])
-
-        # add another fully-connected layer that merges the predicted distance with the other distances
-        import pdb; pdb.set_trace()
         if params['use_extra_distances']:
             print('Using extra distances')
+
+            # L1 distance layer between the two encoded outputs
+            # One could use Subtract from Keras, but we want the absolute value
+            # l2_distance_layer = Lambda(
+                # lambda tensors: tf.losses.cosine_distance(tensors[0], tensors[1], axis=1, reduction=tf.losses.Reduction.NONE))
+                # lambda tensors: K.square(tensors[0] - tensors[1]))
+            # l2_distance = l2_distance_layer([self.outputs['A'], self.outputs['B']])
+            # all_distances = keras.layers.concatenate([extra_distances, l2_distance], axis=1)
+
+            # Same class or not prediction
+            # self.distance = Dense(units=1, activation=None)(all_distances)
+
+            self.distance = Lambda(costs.euclidean_distance, output_shape=costs.eucl_dist_output_shape)([self.outputs['A'], self.outputs['B']])
+
             # all_distances = keras.layers.concatenate([extra_distances, self.siamese_distance], axis=1)
-            all_distances = keras.layers.concatenate([self.siamese_distance, self.siamese_distance], axis=1)
+            # all_distances = keras.layers.concatenate([self.siamese_distance, self.siamese_distance], axis=1)
             # fc = Dense(4, activation='relu')(all_distances)
-            self.distance = Dense(1, activation='linear')(all_distances)
+            # self.distance = Dense(1, activation='linear')(all_distances)
             # self.distance = keras.layers.average([extra_distances, self.siamese_distance])
         else:
+            self.siamese_distance = Lambda(costs.euclidean_distance, output_shape=costs.eucl_dist_output_shape)([self.outputs['A'], self.outputs['B']])
             self.distance = self.siamese_distance
             print('NOT using extra distances.')
 
@@ -197,7 +208,6 @@ class SpectralNet:
                     x_labeled=x_train_unlabeled[0:0],
                     y_labeled=self.y_train_labeled_onehot,
                     batch_sizes=self.batch_sizes)
-
             # do early stopping if necessary
             if self.lh.on_epoch_end(i, val_losses[i]):
                 print('STOPPING EARLY')

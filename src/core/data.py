@@ -25,42 +25,83 @@ import codecs
 import pickle
 
 
-def get_text_features_for_word(word, word2vec, params):
-  word = GB2US(word.lower())
+def get_features_for_word(word, word2vec_text, word2vec_images):
+  embedding = np.array([])
 
-  if word in word2vec:
-      return word2vec[word]
-  elif word.replace('_', '-') in word2vec:
-      return word2vec[word.replace('_', '-')]
-  else:
-      subwords = re.split("[ _]+", word)
-      count = 0
-      embedding = np.zeros([params['emb_dim']], dtype=np.float32)
-      for subword in subwords:
-          subword = GB2US(subword.lower())
-          if subword in word2vec:
-              count += 1
-              embedding += word2vec[subword]
+  if word2vec_text is not None:
+      word2vec_embedding = get_embedding(word, word2vec_text, 300)
+      if word2vec_embedding is None:
+          return None
+      embedding = np.concatenate([embedding, word2vec_embedding])
+  if word2vec_images is not None:
+      # import pdb; pdb.set_trace()
+      image_embedding = get_embedding(word, word2vec_images, 8192)
+      if image_embedding is None:
+          return None
+      embedding = np.concatenate([embedding, image_embedding])
+  return embedding
 
-      if count == 0:
-          embedding = None
-          # print('WARNING: no embedding for "%s"' %(word))
-      else:
-          embedding /= count
+def get_embedding(word, word2vec, emb_dim):
+    try:
+        word = GB2US(word.lower())
 
-      return embedding
+        if word in word2vec:
+            return word2vec[word]
+        elif word.replace('_', '-') in word2vec:
+            return word2vec[word.replace('_', '-')]
+        else:
+            subwords = re.split("[ _]+", word)
+            count = 0
+            embedding = np.zeros([emb_dim], dtype=np.float32)
+            for subword in subwords:
+                subword = GB2US(subword.lower())
+                if subword in word2vec:
+                    count += 1
+                    embedding += word2vec[subword]
+
+            if count == 0:
+                embedding = None
+                # print('WARNING: no embedding for "%s"' %(word))
+            else:
+                embedding /= count
+
+            return embedding
+    except ValueError as e:
+        import pdb; pdb.set_trace()
+        print(word)
 
 def get_wordsim_data(params):
     '''At the moment not using any of the params.'''
  
-    print('Loading word embeddings...'),
-    word2vec = KeyedVectors.load_word2vec_format('/data1/embeddings/eng/glove.6B.%dd.bin' %(params['emb_dim']), binary=True)
-    print('Done')
-    
-    train_x, train_y, train_diffs = load_wordsim('train', word2vec, params)
-    test_x, test_y, test_diffs = load_wordsim('test', word2vec, params)
+    if params['use_image_features']:
+        print('Loading image word embeddings...'),
+        word2vec_images = KeyedVectors.load_word2vec_format('../../data/wordsim/image_features_filtered.tsv', binary=False)
+        if params['normalize_features']:
+            word2vec_images.init_sims(replace=True) 
+        print('Done')
+    else:
+        word2vec_images = None
 
-    import pdb; pdb.set_trace()
+    if params['use_word2vec_features']:
+        print('Loading text word embeddings...'),
+        word2vec_text = KeyedVectors.load_word2vec_format('/data1/embeddings/eng/glove.42B.%dd.bin' %(params['emb_dim']), binary=True)
+        if params['normalize_features']:
+            word2vec_text.init_sims(replace=True) 
+        print('Done')
+    else:
+        word2vec_text = None
+
+    train_x, train_y, train_diffs = load_wordsim('train', word2vec_text, word2vec_images)
+    test_x, test_y, test_diffs = load_wordsim('test', word2vec_text, word2vec_images)
+
+    if params.get('use_all_data'):
+        train_x = np.concatenate((train_x, test_x), axis=0)
+        train_y = np.concatenate((train_y, test_y), axis=0)
+        train_diffs = np.concatenate((train_diffs, test_diffs), axis=0)
+        test_diffs = np.zeros((0,))
+        test_x = np.zeros((0,) + test_x.shape[1:])
+        test_y = np.zeros((0,))
+
     labeled_x = np.zeros([0, 2, train_x.shape[2]], dtype=np.float32)
     labeled_y = np.zeros([0])
 
@@ -72,6 +113,7 @@ def get_wordsim_data(params):
     d['siamese']['differences'] = (train_diffs, test_diffs)
 
     return d 
+
 
 def get_data(params, data=None):
     '''
@@ -392,24 +434,22 @@ def get_mnist():
     x_test = np.expand_dims(x_test, -1) / 255
     return x_train, x_test, y_train, y_test
 
-def load_wordsim(split, word2vec, params):
+def load_wordsim(split, word2vec_text, word2vec_images):
     '''Returns two lists of triples, one for train, one for test.
        Each contains (word1, word2, label (ie same or different))
     '''
     pairs = []
-    with open('../../data/wordsim/%s_word_pairs.tsv' %(split), 'r') as f:
+    with open('../../data/wordsim/%s_word_pairs.tsv' % (split), 'r') as f:
         for line in f:
             pairs.append(line.strip().split('\t'))
-
-    word_to_features = get_feature_paths_dict()
-     
+    
     x = []
     y = []
     d = []
-    for word1, word2, label in pairs:
-        word1_features = get_text_features_for_word(word1, word2vec, params)
-        word2_features = get_text_features_for_word(word2, word2vec, params)
-        alt_distances = get_alternative_distances(word1, word2, word_to_features)
+    for word1, word2, label, similarities in pairs:
+        word1_features = get_features_for_word(word1, word2vec_text, word2vec_images)
+        word2_features = get_features_for_word(word2, word2vec_text, word2vec_images)
+        alt_distances = [1 - float(similarities)]
 
         if word1_features is None or word2_features is None or alt_distances is None:
             continue
@@ -417,7 +457,7 @@ def load_wordsim(split, word2vec, params):
         both = np.stack([word1_features, word2_features], axis=0)
 
         x.append(both)
-        y.append(1 if label == 'True' else 0)
+        y.append(int(label))
         d.append(alt_distances)
 
     print('Warning: %s split started with %d pairs. Reduced to %d.' % (split, len(pairs), len(x)))

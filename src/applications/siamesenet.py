@@ -30,8 +30,8 @@ def run_net(data, params):
     #
 
     pairs_train, dist_train, pairs_val, dist_val = data['siamese']['train_and_test']
-    extra_distances_train = np.zeros_like(dist_train)
-    extra_distances_val = np.zeros_like(dist_val)
+    extra_distances_train = data['siamese']['differences'][0]
+    extra_distances_val = data['siamese']['differences'][1]
 
     #
     # SET UP INPUTS
@@ -63,7 +63,7 @@ def run_net(data, params):
     #
 
     # run only if we are using a siamese network
-    siamese_net = networks.SiameseNet(inputs, extra_distances, params['arch'], params.get('siam_reg'), y_true, checkpoint=params['model_in'])
+    siamese_net = networks.SiameseNet(inputs, extra_distances, y_true, params)
     if params['model_in'] is None:
         print('Training...')
         history = siamese_net.train(
@@ -75,6 +75,7 @@ def run_net(data, params):
         if params['model_out'] is not None:
             siamese_net.net.save_weights(params['model_out'])
     else:
+        # siamese_net.net.load_weights(params['model_in'])
         print('Loaded weights from checkpoint.')
 
     #
@@ -97,21 +98,40 @@ def run_net(data, params):
       all_z_sim.append(z_sim)
       all_y.append(dist_val[idx])
 
-      orig_sim = np.linalg.norm(x[0,:] - x[1,:])
+      # orig_sim = np.linalg.norm(x[0,:] - x[1,:])
   
-    model = sklearn.linear_model.LogisticRegression()
-    model.fit(np.array(all_x_sim).reshape(-1, 1), np.array(all_y))
-    score = model.score(np.array(all_x_sim).reshape(-1, 1), np.array(all_y))
+    model1 = sklearn.linear_model.LogisticRegression()
+    model1.fit(np.array(all_x_sim).reshape(-1, 1), np.array(all_y))
+    score = model1.score(np.array(all_x_sim).reshape(-1, 1), np.array(all_y))
     print('Score with original space: ' + str(score))
 
-    model.fit(np.array(all_z_sim).reshape(-1, 1), np.array(all_y))
-    score = model.score(np.array(all_z_sim).reshape(-1, 1), np.array(all_y))
-    print('Score with transformed  space: ' + str(score))
+    score = np.sum(np.array(all_y) == 1) / float(len(all_y))
+    print('Score with predict 1: ' + str(score))
 
+    score = np.sum(np.array(all_y) == 0) / float(len(all_y))
+    print('Score with predict 0: ' + str(score))
+
+    preds = np.array(all_z_sim) > 0.09
+    preds = preds.astype(int)
+    score = np.sum(np.array(all_y) == preds) / float(len(all_y))
+    print('Score with predict z > 0.09 as 1: ' + str(score))
+
+    preds = np.array(all_z_sim) > 1
+    preds = preds.astype(int)
+    score = np.sum(np.array(all_y) == preds) / float(len(all_y))
+    print('Score with predict z > 1 as 1: ' + str(score))
+
+    model2 = sklearn.linear_model.LogisticRegression()
+    model2.fit(np.array(all_z_sim).reshape(-1, 1), np.array(all_y))
+    score = model2.score(np.array(all_z_sim).reshape(-1, 1), np.array(all_y))
+    print('Score with transformed space: ' + str(score))
+
+    # xx = np.mgrid[0:0.15:0.005].reshape(-1, 1)
+    # probs = model2.predict_proba(xx)[:, 1].reshape(xx.shape)
+      
     plt.figure(1)
     plt.scatter(all_x_sim, all_z_sim, s=10, c=all_y) 
-    # plt.figure(2)
-    # plt.scatter(all_x_sim, all_z_sim, s=10, c=all_y) 
-    # plt.figure(3)
-    # plt.scatter(all_x_sim, all_z_sim, s=10, c=all_y) 
+    # for i in range(len(probs)):
+      # plt.axhline(y=xx[i])    
+
     plt.show()
